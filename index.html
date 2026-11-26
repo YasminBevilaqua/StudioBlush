@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#ffffff" />
+  <title>Studio Blush — Provador Virtual</title>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh.js" crossorigin="anonymous"></script>
+  <style>
+    :root {
+      --white: #fff;
+      --ink: #171719;
+      --text: #29292d;
+      --gray: #73737a;
+      --gray-2: #8a8a90;
+      --line: rgba(0, 0, 0, .08);
+      --fill: rgba(120, 120, 128, .12);
+      --surface: #f5f5f7;
+      --purple: #b450c8;
+      --purple-press: #9c3db3;
+      --purple-soft: rgba(180, 80, 200, .12);
+      --rose: #ff7eb6;
+      --glass: rgba(255, 255, 255, .82);
+      --shadow: 0 8px 32px rgba(0, 0, 0, .12);
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --ease: cubic-bezier(.32, .72, 0, 1);
+      --ease-soft: cubic-bezier(.4, 0, .2, 1);
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: var(--white); color: var(--text); font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+    button { color: inherit; font: inherit; cursor: pointer; }
+    button:focus-visible { outline: 2px solid var(--purple); outline-offset: 3px; }
+    .hidden { display: none !important; }
+    #app { position: fixed; inset: 0; overflow: hidden; background: var(--white); }
+    .view { position: absolute; inset: 0; visibility: hidden; opacity: 0; transition: opacity .35s var(--ease-soft), visibility .35s; }
+    .view.active { visibility: visible; opacity: 1; }
+    .glass { background: var(--glass); border: 1px solid rgba(255, 255, 255, .6); box-shadow: var(--shadow); -webkit-backdrop-filter: saturate(180%) blur(24px); backdrop-filter: saturate(180%) blur(24px); }
+
+    #welcome { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: calc(32px + var(--safe-top)) 24px calc(32px + var(--safe-bottom)); overflow: hidden; text-align: center; background: radial-gradient(ellipse at 50% 44%, #fff 0%, #f6f2f9 64%, #f1edf4 100%); }
+    .brand { position: relative; display: grid; grid-template-columns: auto auto; align-items: baseline; column-gap: 6px; padding: 6px 12px; color: var(--ink); user-select: none; }
+    .brand-line-1, .brand-line-2 { font-size: clamp(44px, 9vw, 76px); line-height: 1; opacity: 0; transform: translateY(12px); }
+    .brand-line-1 { font-weight: 200; }
+    .brand-line-2 {
+      background: linear-gradient(100deg, var(--purple) 0%, var(--rose) 25%, var(--purple) 50%, var(--rose) 75%, var(--purple) 100%);
+      background-size: 300% 100%;
+      background-position: 0 0;
+      color: var(--purple);
+      font-family: "Palatino Linotype", "Book Antiqua", Georgia, serif;
+      font-style: italic;
+      font-weight: 500;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    #welcome.playing .brand-line-1 { animation: lineIn .45s var(--ease) forwards .03s; }
+    #welcome.playing .brand-line-2 { animation: lineIn .45s var(--ease) forwards .08s, gradientFlow 6s linear infinite .53s; }
+    .brand-tag { grid-column: 1 / -1; justify-self: center; margin-top: 16px; color: var(--gray); font-size: 10px; font-weight: 500; letter-spacing: 4px; text-transform: uppercase; opacity: 0; }
+    #welcome.playing .brand-tag { animation: fadeUp .35s var(--ease) forwards .58s; }
+    .welcome-desc { max-width: 400px; margin: 8px auto 0; color: var(--gray-2); font-size: 17px; opacity: 0; }
+    .btn-primary { min-height: 50px; margin-top: 40px; padding: 0 32px; border: 0; border-radius: 999px; background: var(--purple); color: var(--white); font-size: 16px; font-weight: 600; opacity: 0; transition: background .2s var(--ease-soft), transform .15s var(--ease-soft); }
+    .btn-primary:hover { background: var(--purple-press); }
+    .btn-primary:active { transform: scale(.97); }
+    #welcome.playing .welcome-desc { animation: rise .45s var(--ease) .78s both; }
+    #welcome.playing .btn-primary { animation: rise .45s var(--ease) 1.28s both; }
+    #welcome.leaving .brand-line-1, #welcome.leaving .brand-line-2, #welcome.leaving .brand-tag { animation: none !important; opacity: 1 !important; transform: none !important; }
+    #welcome.leaving .brand { animation: brandExit .75s var(--ease-soft) forwards; transform-origin: center; }
+    #welcome.leaving .welcome-desc { animation: textExitUp .4s var(--ease-soft) forwards; }
+    #welcome.leaving .btn-primary { animation: btnExit .45s var(--ease-soft) forwards; }
+    @keyframes lineIn { to { opacity: 1; transform: translateY(0); } }
+    @keyframes fadeUp { to { opacity: .8; transform: translateY(0); } }
+    @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+    @keyframes gradientFlow { to { background-position: -300% 0; } }
+    @keyframes brandExit { 40% { transform: perspective(1400px) translateZ(120px) scale(1.08); } to { transform: perspective(1400px) translateZ(450px) scale(1.55); opacity: 0; filter: blur(14px); } }
+    @keyframes textExitUp { to { transform: translateY(-18px); opacity: 0; } }
+    @keyframes btnExit { 40% { transform: scale(1.05); } to { transform: scale(.9); opacity: 0; } }
+
+    .app-shell { position: absolute; inset: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(400px, 520px); gap: 16px; padding: calc(16px + var(--safe-top)) 16px calc(16px + var(--safe-bottom)); background: var(--white); }
+    .stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; border-radius: 28px; background: #171719; }
+    .stage video, .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1) translateZ(0); backface-visibility: hidden; }
+    .stage video { opacity: 0; transition: opacity .5s var(--ease-soft); }
+    .stage.live video { opacity: 1; }
+    .stage canvas { z-index: 2; pointer-events: none; }
+    .stage-msg { position: absolute; inset: 0; z-index: 6; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 32px; background: var(--white); text-align: center; transition: opacity .4s var(--ease-soft); }
+    .stage-msg.gone { opacity: 0; pointer-events: none; }
+    .stage-msg h3 { margin: 0; color: var(--ink); font-size: 24px; font-weight: 500; }
+    .stage-msg p { max-width: 320px; margin: 0; color: var(--gray); font-size: 15px; }
+    .stage-msg .btn-primary { min-height: 44px; margin-top: 8px; padding: 0 24px; font-size: 15px; opacity: 1; }
+    .loader-ring { width: 34px; height: 34px; border: 2.5px solid rgba(0, 0, 0, .08); border-top-color: var(--purple); border-radius: 50%; animation: spin .9s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .hint { position: absolute; z-index: 4; top: calc(16px + var(--safe-top)); left: 50%; max-width: calc(100% - 32px); padding: 9px 16px; border-radius: 999px; color: var(--text); font-size: 13px; text-align: center; opacity: 0; pointer-events: none; transform: translate(-50%, -6px); transition: opacity .3s var(--ease-soft), transform .35s var(--ease); }
+    .hint.show { opacity: 1; transform: translate(-50%, 0); }
+    .cam-back { position: absolute; z-index: 8; top: calc(16px + var(--safe-top)); left: 16px; display: grid; width: 44px; height: 44px; place-items: center; border: 0; border-radius: 50%; background: var(--glass); box-shadow: var(--shadow); }
+
+    .right-panel { position: relative; display: flex; min-height: 0; flex-direction: column; overflow: hidden; border-radius: 28px; }
+    .panel-nav { display: flex; flex-shrink: 0; justify-content: center; padding: 16px 16px 8px; }
+    .segmented { --n: 2; --i: 0; position: relative; display: grid; width: min(280px, 100%); grid-template-columns: repeat(var(--n), 1fr); padding: 2px; border-radius: 12px; background: var(--fill); }
+    .segmented .thumb { position: absolute; top: 2px; bottom: 2px; left: 2px; width: calc((100% - 4px) / var(--n)); border-radius: 10px; background: var(--white); box-shadow: 0 1px 3px rgba(0, 0, 0, .12), 0 0 1px rgba(0, 0, 0, .1); transform: translateX(calc(var(--i) * 100%)); transition: transform .35s var(--ease); }
+    .segmented button { position: relative; z-index: 1; height: 32px; border: 0; background: transparent; font-size: 13px; font-weight: 500; }
+    .panel-body { position: relative; display: flex; min-height: 0; flex: 1; flex-direction: column; overflow: hidden; }
+    .panel-pane { position: absolute; inset: 0; display: flex; visibility: hidden; flex-direction: column; overflow: hidden; opacity: 0; transition: opacity .28s var(--ease-soft), visibility .28s; }
+    .panel-pane.active { visibility: visible; opacity: 1; }
+    .sel-row { display: flex; flex-shrink: 0; align-items: center; gap: 12px; padding: 4px 16px 10px; }
+    .sel-swatch, .shade-dot i, .car-swatch, .row-swatch { flex-shrink: 0; border: 3px solid var(--white); border-radius: 50%; box-shadow: 0 1px 6px rgba(0, 0, 0, .18); }
+    .sel-swatch { width: 40px; height: 40px; }
+    .sel-photo { width: 32px; height: 48px; flex-shrink: 0; border-radius: 6px; object-fit: contain; background: var(--white); }
+    .sel-text { min-width: 0; flex: 1; }
+    .sel-brand { color: var(--gray); font-size: 12px; line-height: 1.2; }
+    .brand-logo { display: block; width: auto; height: 16px; max-width: 72px; object-fit: contain; }
+    .sel-brand .brand-logo { height: 14px; max-width: 74px; }
+    .sel-name { overflow: hidden; color: var(--ink); font-size: 17px; font-weight: 600; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+    .sel-meta { overflow: hidden; color: var(--gray); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+    .sel-actions { display: flex; width: 88px; flex-shrink: 0; flex-direction: column; gap: 6px; }
+    .apply-btn { width: 88px; min-height: 36px; flex-shrink: 0; padding: 0 18px; border: 0; border-radius: 999px; font-size: 14px; font-weight: 600; }
+    .apply-btn.is-off { background: var(--purple); color: var(--white); }
+    .apply-btn.is-on { background: var(--fill); color: var(--ink); }
+    .cart-add { display: grid; width: 88px; height: 36px; align-self: flex-end; place-items: center; padding: 0 18px; border: 0; border-radius: 999px; background: #278552; color: var(--white); transition: background .18s var(--ease-soft), transform .18s var(--ease-soft); }
+    .cart-add:hover { background: #206b42; }
+    .cart-add:active { transform: scale(.92); }
+    .cart-add svg { width: 22px; height: 22px; }
+    .cart-fab { position: fixed; z-index: 20; right: 24px; bottom: calc(24px + var(--safe-bottom)); display: grid; width: 56px; height: 56px; place-items: center; border: 0; border-radius: 50%; background: var(--purple); color: var(--white); box-shadow: 0 6px 22px rgba(0, 0, 0, .24); }
+    .cart-fab svg { width: 24px; height: 24px; }
+    .cart-count { position: absolute; top: -3px; right: -3px; display: grid; min-width: 21px; height: 21px; place-items: center; padding: 0 5px; border: 2px solid var(--white); border-radius: 999px; background: #d43e67; color: var(--white); font-size: 11px; font-weight: 700; }
+    .cart-panel { position: fixed; z-index: 19; right: 24px; bottom: calc(92px + var(--safe-bottom)); display: flex; width: min(360px, calc(100vw - 32px)); max-height: min(440px, calc(100vh - 120px)); flex-direction: column; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: var(--white); box-shadow: 0 12px 40px rgba(0, 0, 0, .2); visibility: hidden; opacity: 0; pointer-events: none; transform: translateY(12px) scale(.98); transform-origin: bottom right; transition: opacity .2s var(--ease-soft), transform .24s var(--ease), visibility 0s linear .24s; }
+    .cart-panel.is-open { visibility: visible; opacity: 1; pointer-events: auto; transform: translateY(0) scale(1); transition: opacity .2s var(--ease-soft), transform .24s var(--ease), visibility 0s; }
+    .cart-head { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; padding: 16px; border-bottom: 1px solid var(--line); }
+    .cart-head h2 { margin: 0; color: var(--ink); font-size: 17px; }
+    .cart-close, .cart-remove { display: grid; width: 32px; height: 32px; place-items: center; border: 0; border-radius: 50%; background: var(--surface); }
+    .cart-list { overflow-y: auto; padding: 4px 16px; }
+    .cart-empty { margin: 0; padding: 24px 4px; color: var(--gray); font-size: 14px; text-align: center; }
+    .cart-item { display: flex; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+    .cart-item .row-swatch { width: 34px; height: 34px; }
+    .cart-item .row-text { flex: 1; }
+    .cart-item .row-name { font-size: 14px; }
+    .cart-item .row-type { font-size: 12px; }
+    .cart-quantity { color: var(--gray); font-size: 12px; white-space: nowrap; }
+    .cart-price { color: var(--text); font-size: 12px; font-weight: 600; white-space: nowrap; }
+    .cart-total { display: flex; flex-shrink: 0; justify-content: space-between; padding: 14px 16px; border-top: 1px solid var(--line); color: var(--gray); font-size: 13px; }
+    .cart-total strong { color: var(--ink); font-size: 15px; }
+    .cart-note { margin: 0; padding: 0 16px 12px; color: var(--gray); font-size: 11px; }
+    .try-scroll, .catalog-scroll { min-height: 0; flex: 1; overflow-x: hidden; overflow-y: auto; padding-bottom: 12px; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+    .shade-row { display: flex; flex-shrink: 0; gap: 4px; overflow-x: auto; padding: 4px 16px; scrollbar-width: none; }
+    .shade-row::-webkit-scrollbar, .carousel::-webkit-scrollbar, .chips::-webkit-scrollbar { display: none; }
+    .shade-dot { display: grid; width: 40px; height: 40px; flex-shrink: 0; place-items: center; padding: 0; border: 0; border-radius: 50%; background: transparent; }
+    .shade-dot i { display: block; width: 30px; height: 30px; outline: 2px solid transparent; outline-offset: 0; transition: outline-color .25s var(--ease-soft), outline-offset .25s var(--ease); }
+    .shade-dot.active i { outline-color: var(--purple); outline-offset: 2px; }
+    .intensity { display: grid; flex-shrink: 0; grid-template-columns: auto 1fr 40px; align-items: center; gap: 12px; padding: 4px 16px 12px; color: var(--gray); font-size: 13px; }
+    .intensity.off { opacity: .4; pointer-events: none; }
+    .intensity output { text-align: right; font-variant-numeric: tabular-nums; }
+    input[type="range"] { width: 100%; height: 28px; margin: 0; accent-color: var(--purple); }
+    #groupPills { --n: 3; flex-shrink: 0; width: calc(100% - 32px); margin: 2px 16px 8px; }
+    .carousel { position: relative; display: flex; flex-shrink: 0; justify-content: safe center; gap: 12px; overflow-x: auto; padding: 6px 16px 12px; scroll-padding: 0 16px; scroll-snap-type: x proximity; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+    .car-item { display: flex; width: 80px; flex: 0 0 80px; flex-direction: column; align-items: center; gap: 6px; padding: 0; border: 0; background: none; scroll-snap-align: start; text-align: center; }
+    .car-swatch { width: 60px; height: 60px; outline: 2px solid transparent; outline-offset: 0; transition: outline-color .25s var(--ease-soft), outline-offset .3s var(--ease); }
+    .car-item.selected .car-swatch { outline-color: var(--purple); outline-offset: 3px; }
+    .car-brand { color: var(--gray); font-size: 11px; line-height: 1.1; }
+    .car-brand .brand-logo { height: 14px; max-width: 52px; }
+    .car-name { display: -webkit-box; overflow: hidden; color: var(--text); font-size: 12px; font-weight: 500; line-height: 1.2; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+    .studio-logo { display: inline-flex; flex-shrink: 0; align-self: center; align-items: baseline; gap: 5px; margin: 8px auto calc(10px + var(--safe-bottom)); padding: 6px 10px; border: 0; background: transparent; color: var(--ink); font-size: 16px; }
+    .studio-logo .s-sans { font-weight: 300; }
+    .studio-logo .s-serif { color: var(--purple); font-family: "Palatino Linotype", "Book Antiqua", Georgia, serif; font-style: italic; }
+
+    .catalog-scroll { padding: 4px 16px 24px; }
+    .chips { display: flex; gap: 8px; overflow-x: auto; margin-bottom: 8px; padding-bottom: 4px; scrollbar-width: none; }
+    .chip { height: 36px; flex-shrink: 0; padding: 0 16px; border: 0; border-radius: 999px; background: var(--fill); font-size: 14px; font-weight: 500; }
+    .chip.active { background: var(--ink); color: var(--white); }
+    .list-section { margin-top: 20px; }
+    .list-section:first-child { margin-top: 4px; }
+    .list-heading { margin: 0 0 4px; color: var(--ink); font-size: 18px; font-weight: 600; }
+    .row { display: flex; width: 100%; align-items: center; gap: 14px; padding: 12px 0; border: 0; border-bottom: 1px solid var(--line); background: transparent; text-align: left; }
+    .row-swatch { width: 40px; height: 40px; }
+    .row-text { min-width: 0; flex: 1; }
+    .row-name { color: var(--ink); font-size: 15px; font-weight: 500; }
+    .row-type, .row-brand { color: var(--gray); font-size: 13px; }
+    .row-brand .brand-logo { height: 15px; max-width: 54px; }
+    .row-end { display: flex; flex-shrink: 0; align-items: center; gap: 10px; color: var(--gray-2); }
+    .row-end .in-use { color: var(--purple); }
+    .morph-tools { margin: 20px 0 0; border-top: 1px solid var(--line); padding-top: 14px; }
+    .morph-tools summary { color: var(--ink); font-size: 15px; font-weight: 600; cursor: pointer; }
+    #morph-panel { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; }
+    label.slider { display: grid; grid-template-columns: minmax(0, 1fr) minmax(88px, 130px) 42px; align-items: center; gap: 8px; font-size: 12px; }
+    label.slider span { min-width: 0; }
+    label.slider span i { color: var(--gray); font-weight: 400; font-style: normal; }
+    label.slider input { width: 100%; }
+    label.slider output { color: var(--gray); text-align: right; font-variant-numeric: tabular-nums; }
+    .morph-actions { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 12px; }
+    .morph-actions label { display: flex; align-items: center; gap: 6px; color: var(--gray); font-size: 12px; }
+    .sheet-handle { display: none; }
+
+    @media (max-width: 899px) {
+      .app-shell { display: block; padding: 0; }
+      .stage { position: absolute; inset: 0; border-radius: 0; }
+      .right-panel { position: absolute; z-index: 10; right: 8px; bottom: max(8px, var(--safe-bottom)); left: 8px; max-height: 78%; border-radius: 28px; }
+      .right-panel[data-state="min"] { max-height: 88px; }
+      .right-panel[data-state="min"] .panel-body { display: none; }
+      .cam-back { top: calc(16px + var(--safe-top)); left: 16px; }
+      .panel-nav { padding: 12px 12px 8px; }
+      .sheet-handle { position: relative; display: block; width: 100%; height: 20px; flex-shrink: 0; border: 0; background: transparent; }
+      .sheet-handle::after { position: absolute; top: 9px; left: 50%; width: 36px; height: 5px; border-radius: 3px; background: rgba(60, 60, 67, .3); content: ""; transform: translateX(-50%); }
+    }
+    @media (min-width: 900px) {
+      .cam-back { display: none; }
+      .hint { top: 20px; }
+    }
+    @media (max-width: 520px) {
+      .right-panel { max-height: 78%; }
+      .panel-pane { border-radius: 0; }
+      .intensity { gap: 8px; }
+      .carousel { justify-content: flex-start; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <section class="view active playing" id="welcome">
+      <div class="brand" aria-label="Studio Blush">
+        <div class="brand-line-1">Studio</div><div class="brand-line-2">Blush</div>
+        <div class="brand-tag">Beauty Atelier</div>
+      </div>
+      <p class="welcome-desc">Descubra como seus produtos favoritos ficam em você usando nosso provador virtual.</p>
+      <button class="btn-primary" id="btnStart" type="button">Abrir câmera</button>
+    </section>
+
+    <section class="view" id="tryon">
+      <div class="app-shell">
+        <main class="stage" id="stage">
+          <video id="video" autoplay playsinline muted></video>
+          <canvas id="renderCanvas"></canvas>
+          <button class="cam-back" id="camBack" type="button" aria-label="Voltar ao início">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <div class="glass hint" id="hint" role="status"></div>
+          <div class="stage-msg" id="stageLoading"><div class="loader-ring"></div><p>Preparando seu espelho digital…</p></div>
+          <div class="stage-msg gone" id="stageError">
+            <h3 id="errTitle">Câmera indisponível</h3><p id="errBody"></p>
+            <button class="btn-primary" id="btnRetry" type="button">Tentar novamente</button>
+          </div>
+        </main>
+
+        <aside class="right-panel glass" id="rightPanel" data-state="open">
+          <button class="sheet-handle" id="sheetHandle" type="button" aria-label="Expandir ou recolher painel"></button>
+          <div class="panel-nav">
+            <nav class="segmented" id="tabs" role="tablist" style="--n:2;--i:0">
+              <span class="thumb"></span>
+              <button role="tab" type="button" data-tab="try" aria-selected="true">Experimentar</button>
+              <button role="tab" type="button" data-tab="catalog" aria-selected="false">Produtos</button>
+            </nav>
+          </div>
+          <div class="panel-body">
+            <section class="panel-pane active" id="panelTry">
+              <div class="sel-row">
+                <div class="sel-swatch" id="selSwatch"></div>
+                <img class="sel-photo" id="selPhoto" alt="" hidden />
+                <div class="sel-text"><div class="sel-brand" id="selBrand"></div><div class="sel-name" id="selName"></div><div class="sel-meta" id="selMeta"></div></div>
+                <div class="sel-actions">
+                  <button class="apply-btn is-on" id="applyBtn" type="button">Aplicar</button>
+                  <button class="cart-add" id="cartAdd" type="button" aria-label="Adicionar ao carrinho" title="Adicionar ao carrinho"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3h2l2.4 12.2a2 2 0 0 0 2 1.6h7.8a2 2 0 0 0 2-1.6L21 8H6"/><circle cx="10" cy="21" r="1"/><circle cx="18" cy="21" r="1"/><path d="M13 7v6m-3-3h6"/></svg></button>
+                </div>
+              </div>
+              <div class="try-scroll" id="tryScroll">
+                <div class="shade-row" id="shadeRow" role="listbox" aria-label="Tonalidades"></div>
+                <div class="intensity" id="intensityWrap"><label for="intensity">Intensidade</label><input type="range" id="intensity" min="10" max="100" value="94" /><output id="intensityOut" for="intensity">94%</output></div>
+                <div class="segmented" id="groupPills" role="tablist" aria-label="Categorias"></div>
+                <div class="carousel" id="carousel"></div>
+              </div>
+            </section>
+            <section class="panel-pane" id="panelCatalog">
+              <div class="catalog-scroll">
+                <div class="chips" id="catalogChips"></div>
+                <div id="catalogList"></div>
+                <details class="morph-tools">
+                  <summary>Remodelar rosto</summary>
+                  <button class="chip" id="clear" type="button">Remover toda a maquiagem</button>
+                  <div id="morph-panel"></div>
+                  <div class="morph-actions">
+                    <button id="reset-morph" type="button">Redefinir formato</button>
+                    <label><input type="checkbox" id="wireframe"> Wireframe</label>
+                    <label><input type="checkbox" id="blur"> Desfoque</label>
+                  </div>
+                </details>
+              </div>
+            </section>
+          </div>
+          <button class="studio-logo" id="studioLogo" type="button" aria-label="Voltar para a página inicial"><span class="s-sans">Studio</span><span class="s-serif">Blush</span></button>
+        </aside>
+      </div>
+      <button class="cart-fab" id="cartToggle" type="button" aria-label="Abrir carrinho" aria-expanded="false" aria-controls="cartPanel">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3h2l2.4 12.2a2 2 0 0 0 2 1.6h7.8a2 2 0 0 0 2-1.6L21 8H6"/><circle cx="10" cy="21" r="1"/><circle cx="18" cy="21" r="1"/></svg>
+        <span class="cart-count hidden" id="cartCount">0</span>
+      </button>
+      <section class="cart-panel" id="cartPanel" aria-label="Carrinho de compras" aria-hidden="true">
+        <header class="cart-head"><h2>Meu carrinho</h2><button class="cart-close" id="cartClose" type="button" aria-label="Fechar carrinho"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m18 6-12 12M6 6l12 12"/></svg></button></header>
+        <div class="cart-list" id="cartList"></div>
+        <footer class="cart-total"><span>Total</span><strong id="cartTotal">R$ 0,00</strong></footer>
+        <p class="cart-note">Preços de referência; podem variar por loja e promoção.</p>
+      </section>
+    </section>
+  </div>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
